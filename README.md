@@ -1,5 +1,5 @@
 # SimpleVehicleShop
-[![Discord](https://img.shields.io/discord/726339892933558442?label=Discord%20Chat&logo=discord&style=flat-square)](https://discord.com/invite/wMrPygv) <br>
+[![Discord](https://img.shields.io/discord/726339892933558442?label=Discord%20Chat&logo=discord&style=flat-square)](https://discord.com/invite/wMrPygv) https://img.shields.io/github/downloads/senior-s/SimpleVehicleShop/latest/total?label=Downloads&logo=github&style=flat-square <br>
 A simple plugin to have a good vehicle shop!
 
 ##Commands:
