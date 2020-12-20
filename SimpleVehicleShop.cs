@@ -1,48 +1,59 @@
-﻿using System;
-using Microsoft.Extensions.Localization;
-using Microsoft.Extensions.Logging;
-using Cysharp.Threading.Tasks;
-using OpenMod.Unturned.Plugins;
-using OpenMod.API.Plugins;
+﻿using Rocket.Core.Plugins;
 using SDG.Unturned;
-using System.Collections.Generic;
-using Steamworks;
-using SimpleVehicleShop.API;
 using UnityEngine;
+using Logger = Rocket.Core.Logging.Logger;
+using Rocket.API.Collections;
+using System.Collections.Generic;
+using System.Collections;
 using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.Extensions.Configuration;
-using OpenMod.Core.Helpers;
+using SimpleVehicleShop.API;
+using Steamworks;
+using fr34kyn01535.Uconomy;
 
-[assembly: PluginMetadata("SS.SimpleVehicleShop", DisplayName = "SimpleVehicleShop")]
 namespace SimpleVehicleShop
 {
-    public class SimpleVehicleShop : OpenModUnturnedPlugin
+    public class SimpleVehicleShop : RocketPlugin<SimpleVehicleShopConfiguration>
     {
-        private readonly IConfiguration m_Configuration;
-        private readonly IStringLocalizer m_StringLocalizer;
-        private readonly ILogger<SimpleVehicleShop> m_Logger;
+        public static SimpleVehicleShop Instance;
+        private readonly VehicleShopManager m_VehicleShopManager = VehicleShopManager.Instance;
 
-        private readonly IVehicleShopManager m_VehicleShopManager;
-
-        public SimpleVehicleShop(
-            IConfiguration configuration,
-            IStringLocalizer stringLocalizer,
-            ILogger<SimpleVehicleShop> logger, 
-            IVehicleShopManager vehicleShopManager,
-            IServiceProvider serviceProvider) : base(serviceProvider)
+        protected override void Load()
         {
-            m_Configuration = configuration;
-            m_StringLocalizer = stringLocalizer;
-            m_Logger = logger;
-            m_VehicleShopManager = vehicleShopManager;
+            Instance = this;
+            m_VehicleShopManager.InitialFiles();
+            EffectManager.onEffectButtonClicked += OnEffectButtonClicked;
+            Provider.onEnemyDisconnected += OnEnemyDisconnect;
+            PlayerLife.onPlayerDied += OnPlayerDied;
+            Logger.Log("[SimpleVehicleShop] Plugin loaded correctly!");
         }
 
-        protected override async UniTask OnLoadAsync()
+        private void OnPlayerDied(PlayerLife sender, EDeathCause cause, ELimb limb, CSteamID instigator)
         {
-            await UniTask.SwitchToMainThread();
-            EffectManager.onEffectButtonClicked += OnEffectButtonClicked;
-            m_Logger.LogInformation("Plugin loaded correctly!");
+            var user = sender.player;
+
+            if (SimpleVehicleShop.keys.TryGetValue(user, out int v))
+            {
+                EffectManager.askEffectClearByID(49000, user.channel.owner.playerID.steamID);
+                EffectManager.askEffectClearByID(49001, user.channel.owner.playerID.steamID);
+                user.disablePluginWidgetFlag(EPluginWidgetFlags.Modal);
+                SimpleVehicleShop.keys.Remove(user);
+                VehicleManager.instance.channel.send("tellVehicleDestroy", ESteamCall.ALL, ESteamPacket.UPDATE_RELIABLE_BUFFER, SimpleVehicleShop.actualVehicle.instanceID);
+                SimpleVehicleShop.actualVehicle = null;
+            }
+        }
+
+        private void OnEnemyDisconnect(SteamPlayer player)
+        {
+            Player user = player.player;
+            if (SimpleVehicleShop.keys.TryGetValue(user, out int v))
+            {
+                EffectManager.askEffectClearByID(49000, user.channel.owner.playerID.steamID);
+                EffectManager.askEffectClearByID(49001, user.channel.owner.playerID.steamID);
+                user.disablePluginWidgetFlag(EPluginWidgetFlags.Modal);
+                SimpleVehicleShop.keys.Remove(user);
+                VehicleManager.instance.channel.send("tellVehicleDestroy", ESteamCall.ALL, ESteamPacket.UPDATE_RELIABLE_BUFFER, SimpleVehicleShop.actualVehicle.instanceID);
+                SimpleVehicleShop.actualVehicle = null;
+            }
         }
 
         private void OnEffectButtonClicked(Player player, string buttonName)
@@ -73,7 +84,7 @@ namespace SimpleVehicleShop
                     {
                         var indexnew = vehicles.IndexOf(vvs);
                         VehicleInfo qw = vehicles.First(f => f.Type == vvs.Type);
-                        if (vvs.Type != vehicles[nextid].Type)
+                        if (vvs.Type != vehicles[nextid].Type && indexnew > nextid)
                         {
                             if (vvs == qw)
                             {
@@ -168,8 +179,41 @@ namespace SimpleVehicleShop
                     if (!delayPlayers.Contains(player))
                     {
                         VehicleInfo acvehicle = vehicles.FirstOrDefault(k => k.Id == actualVehicle.id);
-                        if (player.skills.experience < acvehicle.Price) ChatManager.say(steamID2, "You don't have money to buy this vehicle", Color.red, true);
-                        else
+                        if (Configuration.Instance.UseUconomy)
+                        {
+                            var balance = Uconomy.Instance.Database.GetBalance(player.channel.owner.playerID.steamID.ToString());
+                            if (balance < acvehicle.Price)
+                            {
+                                ChatManager.say(steamID2, Translate("vehicle_error_nomoney"), Color.red, true);
+                                break;
+                            }
+                        }
+                        if (!Configuration.Instance.UseUconomy && player.skills.experience < acvehicle.Price)
+                        {
+                            ChatManager.say(steamID2, Translate("vehicle_error_nomoney"), Color.red, true);
+                            break;
+                        }
+                        if (Configuration.Instance.UseUconomy)
+                        {
+                            var balance = Uconomy.Instance.Database.GetBalance(player.channel.owner.playerID.steamID.ToString());
+                            if (balance >= acvehicle.Price)
+                            {
+                                VehicleManager.instance.channel.send("tellVehicleDestroy", ESteamCall.ALL, ESteamPacket.UPDATE_RELIABLE_BUFFER, actualVehicle.instanceID);
+                                EffectManager.askEffectClearByID(49000, player.channel.owner.playerID.steamID);
+                                EffectManager.askEffectClearByID(49001, player.channel.owner.playerID.steamID);
+                                player.disablePluginWidgetFlag(EPluginWidgetFlags.Modal);
+                                decimal uprice = decimal.Parse(acvehicle.Price.ToString());
+                                Uconomy.Instance.Database.IncreaseBalance(player.channel.owner.playerID.steamID.ToString(), -uprice);
+                                Quaternion qua = new Quaternion(0, bvehiclerotation, 0, 0);
+                                VehicleManager.spawnLockedVehicleForPlayerV2(vehicles[buyid].Id, pos2, qua, player);
+                                ChatManager.say(steamID2, Translate("vehicle_bought_successfully", vehicles[buyid].Name), Color.cyan, true);
+                                keys.Remove(player);
+                                StartCoroutine(DelayVehicleBuy(player));
+                                rot = 0;
+                                break;
+                            }
+                        }
+                        if (!Configuration.Instance.UseUconomy && player.skills.experience >= acvehicle.Price)
                         {
                             VehicleManager.instance.channel.send("tellVehicleDestroy", ESteamCall.ALL, ESteamPacket.UPDATE_RELIABLE_BUFFER, actualVehicle.instanceID);
                             EffectManager.askEffectClearByID(49000, player.channel.owner.playerID.steamID);
@@ -178,37 +222,69 @@ namespace SimpleVehicleShop
                             player.skills.askSpend(uint.Parse(acvehicle.Price.ToString()));
                             Quaternion ss = new Quaternion(0, bvehiclerotation, 0, 0);
                             VehicleManager.spawnLockedVehicleForPlayerV2(vehicles[buyid].Id, pos2, ss, player);
-                            ChatManager.say(steamID2, m_StringLocalizer["plugin_translations:vehicle_bought_successfully", new { vehicleName = vehicles[buyid].Name }], Color.cyan, true);
+                            ChatManager.say(steamID2, Translate("vehicle_bought_successfully", vehicles[buyid].Name), Color.cyan, true);
                             keys.Remove(player);
-                            UniTask.SwitchToThreadPool();
-                            AsyncHelper.Schedule("Delay Vehicle Buy", () => DelayVehicleBuy(player));
+                            StartCoroutine(DelayVehicleBuy(player));
                             rot = 0;
-                            UniTask.SwitchToMainThread();
-                            break;
                         }
+                        break;
                     }
                     else
                     {
-                        ChatManager.say(steamID2, m_StringLocalizer["plugin_translations:vehicle_bought_error"], Color.red, true);
+                        ChatManager.say(steamID2, Translate("vehicle_bought_error"), Color.red, true);
                         break;
                     }
-                    break;
             }
         }
 
-        public async Task DelayVehicleBuy(Player player)
+        public override TranslationList DefaultTranslations
+        {
+            get
+            {
+                return new TranslationList(){
+                    { "addvehicle_vehicletype_error", "The type of the vehicle need to have more than 2 letters."},
+                    { "addvehicle_vehiclename_error", "The name of the vehicle need to have more than 3 letters." },
+                    { "addvehicle_vehicleprice_error", "The price of the vehicle need to be upper than $10." },
+                    { "addvehicle_vehicleid_error", "Vehicle not found! Please specify a valid ID" },
+                    { "addvehicle_vehicleadded_successfully", "Vehicle added successfully! Vehicle name: {0}" },
+                    { "removevehicle_vehicleremoved_succesfully", "Vehicle removed successfully! Vehicle ID: {0}" },
+                    { "openshop_shopempty", "The shop is empty!" },
+                    { "openshop_positions_error", "The positions of the shop are not defined, contact a administrator to fix this!" },
+                    { "openshop_shopinuse", "The shop is in use by other person!" },
+                    { "vehicle_bought_successfully", "You bought the vehicle {0} successfully" },
+                    { "vehicle_error_nomoney", "You don't have money to buy this vehicle." },
+                    { "vehicle_bought_error", "You need to wait to buy other vehicle!" }
+                };
+            }
+        }
+
+        public IEnumerator AvoidUIOverlapping(Player player)
+        {
+            while (keys.TryGetValue(player, out int val))
+            {
+                var vehicles = m_VehicleShopManager.GetVehiclesSync();
+                EffectManager.sendUIEffect(49000, 490, player.channel.owner.playerID.steamID, true, vehicles[val].Name, vehicles[val].Fuel.ToString(), vehicles[val].Speed.ToString(), vehicles[val].Health.ToString());
+                EffectManager.sendUIEffect(49001, 491, player.channel.owner.playerID.steamID, true, vehicles[val].Price.ToString());
+                yield return new WaitForSeconds(5f);
+            }
+            EffectManager.askEffectClearByID(49000, player.channel.owner.playerID.steamID);
+            EffectManager.askEffectClearByID(49001, player.channel.owner.playerID.steamID);
+            yield return null;
+        }
+
+        public IEnumerator DelayVehicleBuy(Player player)
         {
             delayPlayers.Add(player);
-            await Task.Delay(TimeSpan.FromSeconds(m_Configuration.GetSection("plugin_configuration:delay_per_buy").Get<double>()));
+            yield return new WaitForSeconds(Configuration.Instance.delay_per_buy);
             delayPlayers.Remove(player);
         }
 
-        public static async Task KickPlayerFromShop(Player player, double delay)
+        public IEnumerator KickPlayerFromShop(Player player)
         {
-            await Task.Delay(TimeSpan.FromSeconds(delay));
+            yield return new WaitForSeconds(Configuration.Instance.delay_after_kick_from_shop);
             if (!keys.TryGetValue(player, out int v))
             {
-                return;
+                StopCoroutine(KickPlayerFromShop(player));
             }
             keys.Remove(player);
             VehicleManager.instance.channel.send("tellVehicleDestroy", ESteamCall.ALL, ESteamPacket.UPDATE_RELIABLE_BUFFER, actualVehicle.instanceID);
@@ -217,10 +293,10 @@ namespace SimpleVehicleShop
             player.disablePluginWidgetFlag(EPluginWidgetFlags.Modal);
         }
 
-        protected override async UniTask OnUnloadAsync()
+        protected override void Unload()
         {
             EffectManager.onEffectButtonClicked -= OnEffectButtonClicked;
-            m_Logger.LogInformation("Plugin unloaded correctly!");
+            Logger.Log("[SimpleVehicleShop] Plugin unloaded correctly!");
         }
 
         internal List<Player> delayPlayers = new List<Player>();

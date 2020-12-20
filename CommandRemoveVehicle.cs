@@ -1,40 +1,43 @@
-﻿using Microsoft.Extensions.Localization;
-using OpenMod.Core.Commands;
-using SimpleVehicleShop.API;
-using System;
-using System.Threading.Tasks;
+﻿using Rocket.API;
+using Rocket.Unturned.Player;
+using SDG.Unturned;
+using System.Collections.Generic;
+using UnityEngine;
 
 namespace SimpleVehicleShop
 {
-    class CommandRemoveVehicle
+    class CommandRemoveVehicle : IRocketCommand
     {
-        [Command("removevehicle")]
-        [CommandAlias("removev")]
-        [CommandSyntax("<vehicleId>")]
-        [CommandDescription("Remove a vehicle of the shop.")]
-        public class RemoveVehicle : Command
+        private readonly VehicleShopManager m_VehicleShopManager = VehicleShopManager.Instance;
+
+        public AllowedCaller AllowedCaller => AllowedCaller.Player;
+
+        public string Name => "removevehicle";
+
+        public string Help => "Remove a vehicle from the shop.";
+
+        public string Syntax => "<vehicleId>";
+
+        public List<string> Aliases => new List<string> { "removev" };
+
+        public List<string> Permissions => new List<string> { "removevehicle" };
+
+        public void Execute(IRocketPlayer caller, string[] command)
         {
-            private readonly IVehicleShopManager m_VehicleShopManager;
-            private readonly IStringLocalizer m_StringLocalizer;
-
-            public RemoveVehicle(IServiceProvider serviceProvider, IVehicleShopManager vehicleShopManager, IStringLocalizer stringLocalizer) : base(serviceProvider)
+            UnturnedPlayer user = (UnturnedPlayer)caller;
+            if (command.Length != 1)
             {
-                m_VehicleShopManager = vehicleShopManager;
-                m_StringLocalizer = stringLocalizer;
+                ChatManager.say(user.CSteamID, "Error! Correct command usage: /removevehicle " + Syntax, Color.red, true);
+                return;
             }
 
-            protected override async Task OnExecuteAsync()
-            {
-                if (Context.Parameters.Count != 1)
-                {
-                    throw new CommandWrongUsageException(Context);
-                }
-                ushort vehicleId = await Context.Parameters.GetAsync<ushort>(0);
+            var main = SimpleVehicleShop.Instance;
 
-                await m_VehicleShopManager.RemoveVehicleToShopAsync(vehicleId);
+            ushort vehicleId = ushort.Parse(command[0]);
 
-                await PrintAsync(m_StringLocalizer["plugin_translations:removevehicle_vehicleremoved_succesfully", new { vehicleId = vehicleId }], System.Drawing.Color.Aqua);
-            }
+            m_VehicleShopManager.RemoveVehicleFromShopSync(vehicleId);
+
+            ChatManager.say(user.CSteamID, main.Translate("removevehicle_vehicleremoved_succesfully", vehicleId), Color.cyan, true);
         }
     }
 }
