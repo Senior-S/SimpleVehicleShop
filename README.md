@@ -10,9 +10,6 @@ You can check it out here:
 
 A simple plugin to have a good vehicle shop!
 
-## This repository is outdated!
-You can download the latest version here: https://unturnedstore.com/products/30
-
 Workshop UI: https://steamcommunity.com/sharedfiles/filedetails/?id=2262525496
 
 ## Commands: <br>
