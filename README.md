@@ -1,5 +1,5 @@
 # Abandoned
-This plugin has one of my first plugins and the code right now is really buggy and have a lot errors, for that reason I mark this plugin like obsolete and abandoned.
+This plugin has one of my first plugins and the code right now is really buggy and have a lot errors, for that reason I mark this plugin as obsolete and abandoned.
 
 # SimpleVehicleShop
 [![Discord](https://img.shields.io/discord/726339892933558442?label=Discord%20Chat&logo=discord&style=flat-square)](https://discord.com/invite/wMrPygv) ![GitHub release (latest by date)](https://img.shields.io/github/downloads/senior-s/SimpleVehicleShop/latest/total?label=Downloads&logo=github&style=flat-square)<br>
